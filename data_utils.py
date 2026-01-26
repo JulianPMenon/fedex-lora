@@ -12,7 +12,7 @@ from transformers import (
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, VeraConfig
 
 
 def load_and_preprocess_data(task):
