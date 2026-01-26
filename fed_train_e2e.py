@@ -9,7 +9,7 @@ from transformers import (
 from datasets import load_dataset
 from tqdm import tqdm
 import numpy as np
-from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, VeraConfig
 from data_utils import *
 from models import *
 import argparse
@@ -106,6 +106,8 @@ def federated_learning(task):
             global_model = aggregate_models_normal(global_model, client_models)
         elif args.agg_type == "ours":
             global_model = aggregate_models_ours(global_model, client_models, args)
+        elif args.agg_type == "ours_vera":
+            global_model = aggregate_models_ours_vera(global_model, client_models, args)
         elif args.agg_type == "ffa":
             global_model = aggregate_models_ffa(global_model, client_models)
 
