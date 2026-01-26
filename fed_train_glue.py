@@ -29,11 +29,22 @@ parser.add_argument(
     "--task", type=str, default="cola", help="GLUE task to fine-tune on"
 )
 parser.add_argument("--model", type=str, default="roberta-base", help="Model name")
-parser.add_argument("--lora_r", type=int, default=4, help="LoRA R value")
-parser.add_argument("--lora_alpha", type=int, default=8, help="LoRA alpha value")
+parser.add_argument("--r", type=int, default=4, help="Rank for LoRA/VeRA (replaces lora_r)")
+parser.add_argument("--lora_alpha", type=int, default=8, help="LoRA/VeRA alpha value")
 parser.add_argument(
     "--lora_dropout", type=float, default=0.1, help="LoRA dropout value"
 )
+parser.add_argument('--vera', action='store_true', help='Use VeRA adaptation')
+parser.add_argument('--d_initial', type=float, default=0.1, help='Initial value for d in VeRA')
+parser.add_argument('--vera_dropout', type=float, default=0.0, help='VeRA dropout value')
+parser.add_argument('--projection_prng_key', type=int, default=0, help='Projection PRNG key for VeRA')
+parser.add_argument('--save_projection', type=bool, default=True, help='Save projection in VeRA')
+parser.add_argument('--fan_in_fan_out', type=bool, default=False, help='Fan-in fan-out for VeRA')
+parser.add_argument('--bias', type=str, default='none', help='Bias type for VeRA')
+parser.add_argument('--modules_to_save', type=str, default=None, help='Modules to save for VeRA')
+parser.add_argument('--init_weights', type=bool, default=True, help='Init weights for VeRA')
+parser.add_argument('--layers_to_transform', type=str, default=None, help='Layers to transform for VeRA')
+parser.add_argument('--layers_pattern', type=str, default=None, help='Layers pattern for VeRA')
 parser.add_argument("--rslora", action="store_true", help="Use RSLoRA")
 parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
 parser.add_argument(
@@ -83,12 +94,10 @@ def federated_learning(task):
     client_models = []
 
     for i in range(args.num_clients):
-
         if args.agg_type == "ffa":
             client_model = create_peft_FFA_model(num_labels, args)
         else:
             client_model = create_peft_model(num_labels, args)
-
         client_models.append(client_model)
 
     for round in range(args.rounds):
