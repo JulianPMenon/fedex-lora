@@ -73,7 +73,6 @@ def aggregate_models_ours(global_model, client_models, args):
         global_model.to("cuda") if torch.cuda.is_available() else global_model
     )
     global_dict = global_model.state_dict()
-
     for k in global_dict.keys():
 
         if "classifier" in k:
@@ -124,7 +123,7 @@ def aggregate_models_ours(global_model, client_models, args):
             global_dict[name + ".base_layer.weight"] += torch.transpose(
                 residue * scaling_factor, 1, 0
             )
-
+            
     global_model.load_state_dict(global_dict)
 
     return global_model
@@ -180,9 +179,7 @@ def aggregate_models_ours_vera_fedex(global_model, client_models, args):
                 [client_models[i][ld_key].detach() for i in range(num_clients)]
             )
 
-
             # FedEx core
-
 
             # M = average of full client updates
             M = sum(
@@ -200,9 +197,7 @@ def aggregate_models_ours_vera_fedex(global_model, client_models, args):
             # covariance (FedEx) residue
             residue = M - vera_avg_update
 
-
             # Apply updates
-
 
             global_dict[lb_key] = lambda_b_avg
             global_dict[ld_key] = lambda_d_avg
