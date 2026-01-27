@@ -64,7 +64,7 @@ def train_client(model, dataloader, args):
                 outputs = model(**data)
                 loss = outputs.loss
 
-            wandb.log({"client_loss": loss.detach().cpu().numpy()})
+            #wandb.log({"client_loss": loss.detach().cpu().numpy()})
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -143,15 +143,15 @@ def evaluate_global_model(global_model, dataloader, args, max_metric1, max_metri
     if max_metric2 is not None:
         print(f"{args.task} - Max Metric 2: {max_metric2:.4f}")
 
-    wandb.log(
-        {
-            f"eval_loss": eval_loss,
-            f"metric1": metric1,
-            f"metric2": metric2 if metric2 is not None else 0,
-            f"max_metric1": max_metric1,
-            f"max_metric2": max_metric2 if max_metric2 is not None else 0,
-        }
-    )
+    # wandb.log(
+    #     {
+    #         f"eval_loss": eval_loss,
+    #         f"metric1": metric1,
+    #         f"metric2": metric2 if metric2 is not None else 0,
+    #         f"max_metric1": max_metric1,
+    #         f"max_metric2": max_metric2 if max_metric2 is not None else 0,
+    #     }
+    # )
 
     return max_metric1, max_metric2
 
@@ -186,7 +186,7 @@ def train_client_e2e(model, train_dataset, val_dataset, tokenizer, args):
         learning_rate=args.lr,  # Learning rate for LoRA parameters
         weight_decay=0.01,
         label_smoothing_factor=0.1,
-        report_to="wandb",
+        #report_to="wandb",
         run_name="fed-lora",
         logging_steps=100,  # Log every 100 steps
     )

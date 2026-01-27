@@ -50,7 +50,7 @@ parser.add_argument("--run_dir", type=str, help="Directory to store logs")
 
 args = parser.parse_args()
 
-wandb.init(project="project_name", config=args)
+#wandb.init(project="project_name", config=args)
 
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
