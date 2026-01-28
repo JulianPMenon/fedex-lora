@@ -174,15 +174,15 @@ def aggregate_models_ours_vera_fedex(global_model, client_models, args):
             and hasattr(module, "vera_lambda_d")
         ):
 
-            A_key  = f"{name}.vera_A.default.weight"
-            B_key  = f"{name}.vera_B.default.weight"
+            A_key  = f"{name}.vera_A.default"
+            B_key  = f"{name}.vera_B.default"
             lb_key = f"{name}.vera_lambda_b.default.weight"
             ld_key = f"{name}.vera_lambda_d.default.weight"
             base_key = f"{name}.base_layer.weight"
 
             # Frozen, shared matrices
-            A = module.vera_A.default.weight
-            B = module.vera_B.default.weight
+            A = module.vera_A.default
+            B = module.vera_B.default
 
 
             # Client-specific lambdas
