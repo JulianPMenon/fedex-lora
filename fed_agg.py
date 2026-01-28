@@ -181,8 +181,9 @@ def aggregate_models_ours_vera_fedex(global_model, client_models, args):
             base_key = f"{name}.base_layer.weight"
 
             # Frozen, shared matrices
-            A = global_state[A_key]
-            B = global_state[B_key]
+            A = module.vera_A.default.weight
+            B = module.vera_B.default.weight
+
 
             # Client-specific lambdas
             lambda_bs = torch.stack(
