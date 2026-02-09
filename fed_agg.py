@@ -213,7 +213,10 @@ def aggregate_models_ours_vera_fedex(global_model, client_models, args):
             lambda_b_avg = torch.stack(lambda_bs_raw).mean(0)
             lambda_d_avg = torch.stack(lambda_ds_raw).mean(0)
 
-            residue = M - (lambda_b_avg @ B @ lambda_d_avg @ A)
+            lambda_b_avg_mat = _as_diag_matrix(lambda_b_avg, b_size)
+            lambda_d_avg_mat = _as_diag_matrix(lambda_d_avg, d_size)
+
+            residue = M - (lambda_b_avg_mat @ B @ lambda_d_avg_mat @ A)
 
             global_state[lb_key] = lambda_b_avg
             global_state[ld_key] = lambda_d_avg
