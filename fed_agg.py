@@ -1,6 +1,17 @@
 import torch
 import numpy as np
+import time
+from functools import wraps
 
+def timer(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        print(f"{func.__name__} executed in {end - start:.6f} seconds")
+        return result
+    return wrapper
 
 # --------------------------------------------------
 # Helper
@@ -14,6 +25,7 @@ def _get_state_dicts(client_models):
 # 1. Normal aggregation (LoRA + VeRA + classifier)
 # --------------------------------------------------
 
+@timer
 def aggregate_models_normal(global_model, client_models):
 
     global_state = global_model.state_dict()
@@ -40,6 +52,7 @@ def aggregate_models_normal(global_model, client_models):
 # 2. FFA aggregation (LoRA-B / VeRA-b only)
 # --------------------------------------------------
 
+@timer
 def aggregate_models_ffa(global_model, client_models):
 
     global_state = global_model.state_dict()
@@ -66,6 +79,7 @@ def aggregate_models_ffa(global_model, client_models):
 # 3. Our LoRA aggregation (FedAvg + residue)
 # --------------------------------------------------
 
+@timer
 def aggregate_models_ours(global_model, client_models, args):
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -125,6 +139,7 @@ def aggregate_models_ours(global_model, client_models, args):
 # 4. VeRA + FedEx (FULLY FIXED)
 # --------------------------------------------------
 
+@timer
 def aggregate_models_ours_vera_fedex(global_model, client_models, args):
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

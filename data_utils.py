@@ -152,13 +152,18 @@ def create_client_dataloaders_nlg(dataset, args):
 
 
 def create_client_dataloaders(dataset, args):
+    client_data = create_client_datasets(dataset, args)
+    return [
+        DataLoader(cd, batch_size=args.batch_size, shuffle=True) for cd in client_data
+    ]
+
+
+def create_client_datasets(dataset, args):
     client_data = [[] for _ in range(args.num_clients)]
     for data in dataset:
         client_idx = np.random.randint(args.num_clients)
         client_data[client_idx].append(data)
-    return [
-        DataLoader(cd, batch_size=args.batch_size, shuffle=True) for cd in client_data
-    ]
+    return client_data
 
 
 def create_e2e_data():

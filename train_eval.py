@@ -42,8 +42,11 @@ import os
 from copy import deepcopy
 
 
-def train_client(model, dataloader, args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def train_client(model, dataloader, args, device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -53,14 +56,15 @@ def train_client(model, dataloader, args):
         optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_steps
     )
 
-    scaler = GradScaler()
+    use_amp = device.type == "cuda"
+    scaler = GradScaler(enabled=use_amp)
     model.train()
     for epoch in range(args.local_epochs):
 
         for step, data in enumerate(tqdm(dataloader)):
             data = {k: v.to(device) for k, v in data.items()}
 
-            with autocast():
+            with autocast(enabled=use_amp):
                 outputs = model(**data)
                 loss = outputs.loss
 
@@ -101,31 +105,55 @@ def calculate_metrics(all_true_labels, all_predictions, task):
         raise ValueError(f"Unknown task: {task}")
 
 
-def evaluate_global_model(global_model, dataloader, args, max_metric1, max_metric2):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def evaluate_global_model(
+    global_model, dataloader, args, max_metric1, max_metric2, device=None
+):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
     global_model.to(device)
 
     global_model.eval()
     eval_loss = 0
+    loss_steps = 0
+    has_labels_for_metrics = True
     all_predictions = []
     all_true_labels = []
 
     for batch in dataloader:
         batch = {k: v.to(device) for k, v in batch.items()}
+        labels = batch.get("labels")
+        has_invalid_labels = labels is not None and (labels < 0).any().item()
+        if has_invalid_labels:
+            has_labels_for_metrics = False
+            model_inputs = {k: v for k, v in batch.items() if k != "labels"}
+        else:
+            model_inputs = batch
         with torch.no_grad():
 
-            outputs = global_model(**batch)
+            outputs = global_model(**model_inputs)
 
-            eval_loss += outputs.loss.detach().cpu().numpy()
+            if labels is not None and not has_invalid_labels and outputs.loss is not None:
+                eval_loss += outputs.loss.detach().cpu().numpy()
+                loss_steps += 1
 
             if args.task == "stsb":
                 predictions = outputs.logits.squeeze().cpu().numpy()
             else:
                 predictions = outputs.logits.argmax(dim=-1).cpu().numpy()
             all_predictions.extend(predictions)
-            all_true_labels.extend(batch["labels"].cpu().numpy())
+            if labels is not None and not has_invalid_labels:
+                all_true_labels.extend(labels.cpu().numpy())
 
-    eval_loss /= len(dataloader)
+    if loss_steps > 0:
+        eval_loss /= loss_steps
+
+    if not has_labels_for_metrics or len(all_true_labels) == 0:
+        print(
+            f"{args.task} - Eval Loss: {eval_loss:.4f} (no labels for metrics in this split)"
+        )
+        return max_metric1, max_metric2
 
     # Calculate the metrics for the specific task
     metric1, metric2 = calculate_metrics(all_true_labels, all_predictions, args.task)
