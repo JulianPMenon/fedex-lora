@@ -163,7 +163,9 @@ def build_lambda_d_rot(scale, angles, r, device, dtype):
     magnitude, matching the proof's parameterization: Λ_d = G(θ) · diag(m^{1/r}).
     Iteration is reversed relative to decompose_orthogonal_to_givens so that
     the roundtrip decompose -> build recovers the original orthogonal matrix.
-    All operations use torch ops for autograd compatibility.
+
+    Uses out-of-place scatter via torch.stack on a fresh tensor each iteration
+    so that autograd can differentiate through the Givens angles.
 
     Args:
         scale: scalar tensor — single uniform magnitude
@@ -174,7 +176,6 @@ def build_lambda_d_rot(scale, angles, r, device, dtype):
     Returns:
         (r, r) tensor
     """
-    # Start from identity
     M = torch.eye(r, device=device, dtype=dtype)
 
     pairs = givens_pair_indices(r)
@@ -185,13 +186,22 @@ def build_lambda_d_rot(scale, angles, r, device, dtype):
         c = torch.cos(theta)
         s = torch.sin(theta)
 
-        # Clone the rows to avoid in-place gradient corruption
-        row_p = M[p].clone()
-        row_q = M[q].clone()
+        row_p = M[p]
+        row_q = M[q]
 
-        M = M.clone()
-        M[p] = c * row_p - s * row_q
-        M[q] = s * row_p + c * row_q
+        new_row_p = c * row_p - s * row_q
+        new_row_q = s * row_p + c * row_q
+
+        # Build a full new matrix out-of-place so autograd tracks the angles.
+        rows = []
+        for i in range(r):
+            if i == p:
+                rows.append(new_row_p)
+            elif i == q:
+                rows.append(new_row_q)
+            else:
+                rows.append(M[i])
+        M = torch.stack(rows)
 
     # Uniform scaling: scale * G(angles)
     M = M * scale.to(device=device, dtype=dtype)
