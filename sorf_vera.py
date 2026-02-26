@@ -30,7 +30,7 @@ def build_hadamard(n, device, dtype):
 
     Returns (n, n) tensor equal to scipy.linalg.hadamard(n) / sqrt(n).
     """
-    assert n%2 == 0 and n > 0, "Hadamard size must be a power of 2"
+    assert n > 0 and (n & (n - 1)) == 0, "Hadamard size must be a power of 2"
     H = scipy.linalg.hadamard(n).astype('float64')
     H = torch.tensor(H, device=device, dtype=dtype) / math.sqrt(n)
     return H
@@ -42,33 +42,75 @@ def _random_signs(size, generator):
     return 2.0 * bits.float() - 1.0
 
 
-def build_sorf_matrix(d_out, seed, device, dtype):
-    """Build SORF matrix S of effective shape (d_out, d_out).
+def _power2_partition(n):
+    """Partition n into descending powers of two."""
+    if n <= 0:
+        raise ValueError("n must be positive")
 
-    S = D1 @ H @ D2 @ H @ D3  where Di are random sign diagonals and
-    H is a normalized Hadamard matrix.
+    parts = []
+    rem = n
+    while rem > 0:
+        block = 1 << (rem.bit_length() - 1)
+        parts.append(block)
+        rem -= block
+    return parts
 
-    If d_out is not a power of 2, we pad to next_power_of_2(d_out),
-    build the full SORF, then truncate to (d_out, d_out).
-    """
-    n = next_power_of_2(d_out)
 
-    gen = torch.Generator()
+def _build_sorf_power2(n, seed, dtype):
+    """Build exact SORF block of size n (n must be power of two)."""
+    assert n > 0 and (n & (n - 1)) == 0, "n must be a power of two"
+
+    gen = torch.Generator(device='cpu')
     gen.manual_seed(seed)
 
-    d1 = _random_signs(n, gen)
-    d2 = _random_signs(n, gen)
-    d3 = _random_signs(n, gen)
+    d1 = _random_signs(n, gen).to(dtype=dtype)
+    d2 = _random_signs(n, gen).to(dtype=dtype)
+    d3 = _random_signs(n, gen).to(dtype=dtype)
 
-    H = build_hadamard(n, device='cpu', dtype=torch.float64)
+    H = build_hadamard(n, device='cpu', dtype=dtype)
 
-    D1 = torch.diag(d1.double())
-    D2 = torch.diag(d2.double())
-    D3 = torch.diag(d3.double())
+    D1 = torch.diag(d1)
+    D2 = torch.diag(d2)
+    D3 = torch.diag(d3)
 
-    S_full = D1 @ H @ D2 @ H @ D3
-    S = S_full[:d_out, :d_out].to(device=device, dtype=dtype).contiguous()
-    return S
+    return D1 @ H @ D2 @ H @ D3
+
+
+def build_sorf_matrix(d_out, seed, device, dtype, num_stages=3):
+    """Build a numerically stable orthonormal mixer S of shape (d_out, d_out).
+
+    For non-power-of-two d_out, directly truncating a larger SORF matrix can be
+    ill-conditioned. Instead we construct:
+        S = (P_t B_t P_t^T) ... (P_1 B_1 P_1^T),
+    where each B_k is block-diagonal SORF with power-of-two block sizes that sum
+    to d_out, and each P_k is a deterministic random permutation.
+
+    This keeps S orthonormal and introduces cross-block mixing via permutations.
+    """
+    if d_out <= 0:
+        raise ValueError("d_out must be positive")
+    if num_stages < 1:
+        raise ValueError("num_stages must be >= 1")
+
+    parts = _power2_partition(d_out)
+    S_total = torch.eye(d_out, dtype=torch.float64)
+
+    for stage_idx in range(num_stages):
+        blocks = []
+        for block_idx, block_size in enumerate(parts):
+            block_seed = seed + 1000 * stage_idx + block_idx
+            blocks.append(_build_sorf_power2(block_size, block_seed, torch.float64))
+
+        # Stage-local block SORF, then globally remap dimensions.
+        B = torch.block_diag(*blocks)
+        perm_gen = torch.Generator(device='cpu')
+        perm_gen.manual_seed(seed + 100_000 + stage_idx)
+        perm = torch.randperm(d_out, generator=perm_gen)
+        B_perm = B[perm][:, perm]
+
+        S_total = B_perm @ S_total
+
+    return S_total.to(device=device, dtype=dtype).contiguous()
 
 
 # --------------------------------------------------
@@ -258,9 +300,9 @@ def fit_b(S, B, U_r, Sigma_r, d_out, r):
     Target: S @ Gamma(b) @ B = U_r @ diag(Sigma_r)
     => Gamma(b) @ B = S^{-1} @ U_r @ diag(Sigma_r)
 
-    We solve S @ T = U_r @ diag(Sigma_r) via linalg.solve (exact even
-    when S is a truncated SORF that is not perfectly orthogonal), then
-    fit per-block lstsq:
+    With the stable SORF construction, S is orthonormal, so:
+        T = S^T @ (U_r @ diag(Sigma_r))
+    then fit per-block lstsq:
         For block j (rows 2j, 2j+1):
             T[2j:2j+2, :] = [[a_j, -c_j], [c_j, a_j]] @ B[2j:2j+2, :]
         Rearranging into lstsq: B_block^T @ [a_j, c_j]^T columns
@@ -279,10 +321,8 @@ def fit_b(S, B, U_r, Sigma_r, d_out, r):
     device = S.device
     dtype = S.dtype
 
-    # T = S^{-1} @ (U_r @ diag(Sigma_r)),  shape (d_out, r)
-    # Using linalg.solve instead of S.T to handle non-orthogonal
-    # truncated SORF matrices (when d_out is not a power of 2).
-    T = torch.linalg.solve(S, U_r * Sigma_r.unsqueeze(0))
+    # T = S^T @ (U_r @ diag(Sigma_r)), shape (d_out, r)
+    T = S.T @ (U_r * Sigma_r.unsqueeze(0))
 
     k = d_out // 2
     b_real_new = torch.zeros(k, device=device, dtype=dtype)
